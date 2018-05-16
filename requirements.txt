@@ -1,0 +1,4 @@
+daiquiri
+PyQt5
+pydenticon
+-e git+https://github.com/vianney/python-supergenpass#egg=supergenpass
