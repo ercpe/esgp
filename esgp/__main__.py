@@ -21,20 +21,23 @@ import sys
 
 from PyQt5.QtWidgets import QApplication
 
+from esgp.config import Configuration
 from esgp.ui import MainWindow
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument('-d', '--domain')
     parser.add_argument('-v', '--verbose', action='store_true', default=False, help='Enable verbose logging (default: %(default)s)')
 
     args = parser.parse_args()
 
     daiquiri.setup(level=logging.DEBUG if args.verbose else logging.WARNING)
 
+    config = Configuration()
+    config.read()
+
     app = QApplication(sys.argv)
-    main_window = MainWindow()
+    main_window = MainWindow(config, args)
     main_window.show()
+
     sys.exit(app.exec_())
-
-
-

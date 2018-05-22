@@ -18,16 +18,21 @@ import logging
 
 import pydenticon
 import supergenpass
-from PyQt5.QtCore import QEvent
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QHBoxLayout, QRadioButton, QLabel, QPushButton
+from PyQt5.QtCore import QEvent, Qt
+from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QHBoxLayout, QRadioButton, QLabel, QPushButton, \
+    QMainWindow, QFrame
 
 logger = logging.getLogger(__name__)
 
+
 class MainWindow(QWidget):
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, config, cmdargs, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
+        
+        self.config = config
+        self.initial_domain = cmdargs.domain or ''
         
         self.master_password = None
         self.identicon_label = None
@@ -38,6 +43,7 @@ class MainWindow(QWidget):
         self.radio_sha = None
 
         self.build_ui()
+        self.show()
 
     def build_ui(self):
         self.setWindowTitle('eSGP')
@@ -47,20 +53,23 @@ class MainWindow(QWidget):
         vbox = QVBoxLayout()
         self.setLayout(vbox)
 
-        master_layout = QHBoxLayout()
+        self.build_settings_ui(vbox)
+
+        master_pwd_layout = QHBoxLayout()
 
         self.master_password = QLineEdit('', self)
         self.master_password.setPlaceholderText("Master password")
         self.master_password.setEchoMode(QLineEdit.Password)
         self.master_password.installEventFilter(self)
-
-        master_layout.addWidget(self.master_password)
+        self.master_password.setFocus()
+        master_pwd_layout.addWidget(self.master_password)
 
         self.identicon_label = QLabel()
         self.identicon_label.setFixedWidth(16)
         self.identicon_label.setFixedHeight(16)
-        master_layout.addWidget(self.identicon_label)
-        vbox.addLayout(master_layout)
+        self.identicon_label.setVisible(False)
+        master_pwd_layout.addWidget(self.identicon_label)
+        vbox.addLayout(master_pwd_layout)
         
         self.secret_password = QLineEdit('', self)
         self.secret_password.setPlaceholderText("Secret password")
@@ -68,27 +77,10 @@ class MainWindow(QWidget):
         self.secret_password.installEventFilter(self)
         vbox.addWidget(self.secret_password)
 
-        self.domain = QLineEdit('', self)
+        self.domain = QLineEdit(self.initial_domain, self)
         self.domain.setPlaceholderText("Domain")
         self.domain.installEventFilter(self)
         vbox.addWidget(self.domain)
-
-        settings = QHBoxLayout()
-
-        self.chars = QLineEdit('10', self)
-        settings.addWidget(self.chars)
-
-        self.radio_md5 = QRadioButton("&MD5")
-        self.radio_md5.setChecked(True)
-        self.radio_sha = QRadioButton("&SHA")
-
-        algo_layout = QHBoxLayout()
-        algo_layout.addWidget(self.radio_md5)
-        algo_layout.addWidget(self.radio_sha)
-
-        settings.addLayout(algo_layout)
-
-        vbox.addLayout(settings)
 
         self.generate_button = QPushButton()
         self.generate_button.setText("&Generate")
@@ -108,6 +100,38 @@ class MainWindow(QWidget):
         self.radio_sha.toggled.connect(self.options_changed)
         self.chars.textChanged.connect(self.options_changed)
 
+    def build_settings_ui(self, parent):
+        
+        settings = QHBoxLayout()
+        
+        self.chars = QLineEdit(str(self.config.length), self)
+        self.chars.setValidator(QIntValidator(0, 99, self))
+        settings.addWidget(self.chars)
+        
+        algo_layout = QHBoxLayout()
+        self.radio_md5 = QRadioButton("&MD5")
+        self.radio_md5.setChecked(self.config.algorithm == 'md5')
+        algo_layout.addWidget(self.radio_md5)
+
+        self.radio_sha = QRadioButton("&SHA")
+        self.radio_sha.setChecked(self.config.algorithm == 'sha')
+        algo_layout.addWidget(self.radio_sha)
+
+        settings.addLayout(algo_layout)
+        
+        save_settings_button = QPushButton('')
+        save_settings_button.setIcon(QIcon.fromTheme('document-save'))
+        save_settings_button.clicked.connect(self.save_settings)
+        save_settings_button.setToolTip("Save current settings as defaults")
+        settings.addWidget(save_settings_button)
+
+        parent.addLayout(settings)
+        
+        hr = QFrame()
+        hr.setFrameShape(QFrame.HLine)
+        parent.addWidget(hr)
+        
+
     def eventFilter(self, source, event):
         if event.type() == QEvent.KeyPress and \
                 (source is self.master_password or source is self.secret_password or source is self.domain) and \
@@ -119,6 +143,9 @@ class MainWindow(QWidget):
         self.generate_identicon()
         self.generate_button.setEnabled(bool(self.master_password.text() or "") and bool(self.domain.text() or ""))
         self.generated_password.setVisible(False)
+        
+        self.config.algorithm = 'md5' if self.radio_md5.isChecked() else 'sha'
+        self.config.length = int(self.chars.text())
 
     def get_pwd(self):
         return "%s%s" % (self.master_password.text() or "", self.secret_password.text() or "")
@@ -126,13 +153,26 @@ class MainWindow(QWidget):
     def generate_identicon(self):
         pwd = self.get_pwd()
         
+        if not pwd:
+            return
+        
         for i in range(0, 4):
             h = self.get_digest()()
             h.update(pwd.encode('utf-8'))
             pwd = h.hexdigest()
+
+        foreground = ["rgb(45,79,255)",
+                      "rgb(254,180,44)",
+                      "rgb(226,121,234)",
+                      "rgb(30,179,253)",
+                      "rgb(232,77,65)",
+                      "rgb(49,203,115)",
+                      "rgb(141,69,170)"]
         
         img = QPixmap()
-        img.loadFromData(pydenticon.Generator(5, 5, digest=self.get_digest()).generate(pwd, 16, 16))
+        identicon_generator = pydenticon.Generator(5, 5, digest=self.get_digest(), foreground=foreground, background="rgba(224,224,224,0)")
+        img.loadFromData(identicon_generator.generate(pwd, 16, 16))
+        self.identicon_label.setVisible(True)
         self.identicon_label.setPixmap(img)
 
     def get_digest(self):
@@ -147,9 +187,11 @@ class MainWindow(QWidget):
         
     def generate_password(self):
         if self.master_password.text() and self.domain.text():
-            logger.info("Generate Password!")
             text = supergenpass.generate(self.get_pwd(), self.domain.text(), int(self.chars.text()), self.get_digest_name())
             self.generated_password.setText(text)
             self.generated_password.setVisible(True)
             self.generated_password.selectAll()
             self.generated_password.setFocus()
+
+    def save_settings(self):
+        self.config.write()
