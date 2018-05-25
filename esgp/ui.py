@@ -15,18 +15,21 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import hashlib
 import logging
+from urllib.parse import urlparse
 
 import pydenticon
 import supergenpass
 from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLineEdit, QHBoxLayout, QRadioButton, QLabel, QPushButton, \
-    QMainWindow, QFrame
+from PyQt5.QtWidgets import QVBoxLayout, QLineEdit, QHBoxLayout, QRadioButton, QLabel, QPushButton, \
+    QFrame, QDialog, QApplication
+
+from esgp.settings import SettingsDialog
 
 logger = logging.getLogger(__name__)
 
 
-class MainWindow(QWidget):
+class MainWindow(QDialog):
     
     def __init__(self, config, cmdargs, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
@@ -43,13 +46,13 @@ class MainWindow(QWidget):
         self.radio_sha = None
 
         self.build_ui()
+        self.set_default_settings()
         self.show()
 
     def build_ui(self):
         self.setWindowTitle('eSGP')
-        # self.setMinimumSize(300, 300)
         self.setFixedWidth(250)
-        
+
         vbox = QVBoxLayout()
         self.setLayout(vbox)
 
@@ -60,6 +63,7 @@ class MainWindow(QWidget):
         self.master_password = QLineEdit('', self)
         self.master_password.setPlaceholderText("Master password")
         self.master_password.setEchoMode(QLineEdit.Password)
+        self.master_password.textChanged.connect(self.options_changed)
         self.master_password.installEventFilter(self)
         self.master_password.setFocus()
         master_pwd_layout.addWidget(self.master_password)
@@ -74,11 +78,14 @@ class MainWindow(QWidget):
         self.secret_password = QLineEdit('', self)
         self.secret_password.setPlaceholderText("Secret password")
         self.secret_password.setEchoMode(QLineEdit.Password)
+        self.secret_password.textChanged.connect(self.options_changed)
         self.secret_password.installEventFilter(self)
         vbox.addWidget(self.secret_password)
 
         self.domain = QLineEdit(self.initial_domain, self)
         self.domain.setPlaceholderText("Domain")
+        self.domain.textChanged.connect(self.options_changed)
+        self.domain.textChanged.connect(self.domain_changed)
         self.domain.installEventFilter(self)
         vbox.addWidget(self.domain)
 
@@ -92,50 +99,50 @@ class MainWindow(QWidget):
         self.generated_password.setReadOnly(True)
         self.generated_password.setVisible(False)
         vbox.addWidget(self.generated_password)
-        
-        self.master_password.textChanged.connect(self.options_changed)
-        self.secret_password.textChanged.connect(self.options_changed)
-        self.domain.textChanged.connect(self.options_changed)
-        self.radio_md5.toggled.connect(self.options_changed)
-        self.radio_sha.toggled.connect(self.options_changed)
-        self.chars.textChanged.connect(self.options_changed)
 
     def build_settings_ui(self, parent):
         
         settings = QHBoxLayout()
         
-        self.chars = QLineEdit(str(self.config.length), self)
+        self.chars = QLineEdit('', self)
         self.chars.setValidator(QIntValidator(0, 99, self))
+        self.chars.textChanged.connect(self.options_changed)
+        self.chars.installEventFilter(self)
         settings.addWidget(self.chars)
         
         algo_layout = QHBoxLayout()
         self.radio_md5 = QRadioButton("&MD5")
-        self.radio_md5.setChecked(self.config.algorithm == 'md5')
+        self.radio_md5.toggled.connect(self.options_changed)
         algo_layout.addWidget(self.radio_md5)
 
         self.radio_sha = QRadioButton("&SHA")
-        self.radio_sha.setChecked(self.config.algorithm == 'sha')
+        self.radio_sha.toggled.connect(self.options_changed)
         algo_layout.addWidget(self.radio_sha)
 
         settings.addLayout(algo_layout)
         
+        # see https://standards.freedesktop.org/icon-naming-spec/icon-naming-spec-latest.html
         save_settings_button = QPushButton('')
         save_settings_button.setIcon(QIcon.fromTheme('document-save'))
         save_settings_button.clicked.connect(self.save_settings)
         save_settings_button.setToolTip("Save current settings as defaults")
         settings.addWidget(save_settings_button)
 
+        advanced_settings_button = QPushButton('')
+        advanced_settings_button.setIcon(QIcon.fromTheme('applications-other'))
+        advanced_settings_button.clicked.connect(self.advanced_settings)
+        advanced_settings_button.setToolTip("Show advanced settings")
+        settings.addWidget(advanced_settings_button)
+
         parent.addLayout(settings)
         
         hr = QFrame()
         hr.setFrameShape(QFrame.HLine)
         parent.addWidget(hr)
-        
 
     def eventFilter(self, source, event):
-        if event.type() == QEvent.KeyPress and \
-                (source is self.master_password or source is self.secret_password or source is self.domain) and \
-                event.text() == '\r':
+        if event.type() == QEvent.KeyPress and event.text() == '\r'\
+                and source in (self.master_password, self.secret_password, self.domain, self.chars):
             self.generate_password()
         return super(MainWindow, self).eventFilter(source, event)
 
@@ -144,8 +151,30 @@ class MainWindow(QWidget):
         self.generate_button.setEnabled(bool(self.master_password.text() or "") and bool(self.domain.text() or ""))
         self.generated_password.setVisible(False)
         
-        self.config.algorithm = 'md5' if self.radio_md5.isChecked() else 'sha'
-        self.config.length = int(self.chars.text())
+    def domain_changed(self, text):
+        if QApplication.clipboard().text() == text and text:
+            self.domain_pasted(text)
+    
+        domain_settings = self.config.get_domain_settings(self.domain.text())
+        if domain_settings:
+            self.chars.setText(str(domain_settings['length']))
+            self.radio_md5.setChecked(domain_settings['algorithm'] == 'MD5')
+            self.radio_sha.setChecked(domain_settings['algorithm'] == 'SHA')
+        else:
+            self.set_default_settings()
+
+    def set_default_settings(self):
+        self.chars.setText(str(self.config.length))
+        self.radio_md5.setChecked(self.config.algorithm == 'MD5')
+        self.radio_sha.setChecked(self.config.algorithm == 'SHA')
+
+    def domain_pasted(self, text):
+        try:
+            chunks = urlparse(text)
+            if chunks.netloc != text:
+                self.domain.setText(chunks.netloc)
+        except:
+            pass
 
     def get_pwd(self):
         return "%s%s" % (self.master_password.text() or "", self.secret_password.text() or "")
@@ -194,4 +223,10 @@ class MainWindow(QWidget):
             self.generated_password.setFocus()
 
     def save_settings(self):
+        self.config.algorithm = 'MD5' if self.radio_md5.isChecked() else 'SHA'
+        self.config.length = int(self.chars.text())
         self.config.write()
+
+    def advanced_settings(self):
+        settings_dialog = SettingsDialog(config=self.config)
+        settings_dialog.exec_()

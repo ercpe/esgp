@@ -23,25 +23,49 @@ PATH = os.path.abspath(os.path.expanduser("~/.esgp.cfg"))
 class Configuration(object):
     
     def __init__(self):
-        self.algorithm = 'md5'
+        self.algorithm = 'MD5'
         self.length = 10
+        self.domain_settings = []
     
     def read(self):
         
         parser = ConfigParser()
         parser.read(PATH)
         
-        if parser.has_section('esgp'):
-            self.algorithm = parser.get('esgp', 'algorithm', fallback=self.algorithm)
-            self.length = int(parser.get('esgp', 'length', fallback=self.length))
+        if parser.has_section('defaults'):
+            self.algorithm = parser.get('defaults', 'algorithm', fallback=self.algorithm)
+            self.length = int(parser.get('defaults', 'length', fallback=self.length))
     
+        for section in parser.sections():
+            if section == "defaults":
+                continue
+            
+            self.domain_settings.append({
+                'domain': section,
+                'algorithm': parser.get(section, 'algorithm', fallback=self.algorithm),
+                'length': parser.get(section, 'length', fallback=self.length)
+            })
+
     def write(self):
         
         parser = ConfigParser()
         
-        parser.add_section('esgp')
-        parser.set('esgp', 'algorithm', self.algorithm)
-        parser.set('esgp', 'length', str(self.length))
+        parser.add_section('defaults')
+        parser.set('defaults', 'algorithm', self.algorithm)
+        parser.set('defaults', 'length', str(self.length))
+
+        for settings in self.domain_settings:
+            domain = settings['domain']
+            if not domain:
+                continue
+            parser.add_section(domain)
+            parser.set(domain, 'algorithm', settings['algorithm'])
+            parser.set(domain, 'length', str(settings['length']))
         
         with open(PATH, 'w') as o:
             parser.write(o)
+    
+    def get_domain_settings(self, domain):
+        for d in self.domain_settings:
+            if d.get('domain', '') == domain:
+                return d
