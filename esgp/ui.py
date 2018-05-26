@@ -15,9 +15,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import hashlib
 import logging
+from io import BytesIO
 from urllib.parse import urlparse
 
-import pydenticon
 import supergenpass
 from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QPixmap, QIntValidator, QIcon
@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QLineEdit, QHBoxLayout, QRadioButton, Q
     QFrame, QDialog, QApplication
 
 from esgp.settings import SettingsDialog
+from pydenticon5 import Pydenticon5
 
 logger = logging.getLogger(__name__)
 
@@ -185,22 +186,17 @@ class MainWindow(QDialog):
         if not pwd:
             return
         
-        for i in range(0, 4):
+        s = pwd
+        for i in range(0, 5):
             h = self.get_digest()()
-            h.update(pwd.encode('utf-8'))
-            pwd = h.hexdigest()
+            h.update(s.encode('utf-8'))
+            s = h.hexdigest()
 
-        foreground = ["rgb(45,79,255)",
-                      "rgb(254,180,44)",
-                      "rgb(226,121,234)",
-                      "rgb(30,179,253)",
-                      "rgb(232,77,65)",
-                      "rgb(49,203,115)",
-                      "rgb(141,69,170)"]
-        
         img = QPixmap()
-        identicon_generator = pydenticon.Generator(5, 5, digest=self.get_digest(), foreground=foreground, background="rgba(224,224,224,0)")
-        img.loadFromData(identicon_generator.generate(pwd, 16, 16))
+        identicon = Pydenticon5().draw(s, 16)
+        img_bytes = BytesIO()
+        identicon.save(img_bytes, 'PNG')
+        img.loadFromData(img_bytes.getvalue())
         self.identicon_label.setVisible(True)
         self.identicon_label.setPixmap(img)
 

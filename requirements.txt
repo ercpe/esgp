@@ -1,4 +1,4 @@
 daiquiri
 PyQt5
-pydenticon
 -e git+https://github.com/vianney/python-supergenpass#egg=supergenpass
+-e git+https://git.ercpe.de/ercpe/pydenticon5.git#egg=pydenticon5
