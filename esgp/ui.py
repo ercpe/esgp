@@ -172,7 +172,7 @@ class MainWindow(QDialog):
     def domain_pasted(self, text):
         try:
             chunks = urlparse(text)
-            if chunks.netloc != text:
+            if chunks.netloc and chunks.netloc != text:
                 self.domain.setText(chunks.netloc)
         except:
             pass
