@@ -13,12 +13,18 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+import json
+import os
+import sys
 
 from PyQt5.QtCore import QAbstractTableModel, Qt, QVariant, QModelIndex, QRegExp
 from PyQt5.QtGui import QIntValidator, QRegExpValidator
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFrame, QLabel, QTableView, QLineEdit, \
     QStyledItemDelegate, QPushButton, QComboBox, QHBoxLayout, QTableWidget, QAbstractItemView, QHeaderView
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DomainSettingsTableModel(QAbstractTableModel):
     
@@ -128,10 +134,46 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.build_domain_settings_ui())
         
+        layout.addLayout(self.build_chrome_extension_layout())
+        
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.save_and_close)
         layout.addWidget(save_button)
         
+    def build_chrome_extension_layout(self):
+        l = QVBoxLayout()
+        
+        register_button = QPushButton('Register as a native messaging host in Chrome/Chromium')
+        register_button.clicked.connect(self.register_as_chrome_messaging_host)
+        l.addWidget(register_button)
+        return l
+        
+    def register_as_chrome_messaging_host(self):
+        for profile_directory in [ '~/.config/google-chrome/', '~/.config/chromium/' ]:
+            #NativeMessagingHosts/
+            directory = os.path.expanduser(profile_directory)
+            if not os.path.exists(directory):
+                logger.info("Skipping configuration in %s (not found)", directory)
+                continue
+            
+            path = os.path.join(directory, 'NativeMessagingHosts', 'de.ercpe.esgp.json')
+            
+            if not os.path.exists(os.path.dirname(path)):
+                os.mkdir(os.path.dirname(path))
+            
+            with open(path, 'w') as o:
+                cfg = {
+                    "name": "de.ercpe.esgp",
+                    "description": "eSGP",
+                    "path": sys.argv[0],
+                    "type": "stdio",
+                    "allowed_origins": [
+                        "chrome-extension://odhpmlfckigpfekmnaldaimknpdbodlo/"
+                    ]
+                }
+
+                o.write(json.dumps(cfg))
+
     def build_domain_settings_ui(self):
         # per-domain settings
         domain_settings_layout = QVBoxLayout()

@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 class MainWindow(QDialog):
     
-    def __init__(self, config, cmdargs, *args, **kwargs):
+    def __init__(self, config, url, cmdargs, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
         
         self.config = config
@@ -49,6 +49,9 @@ class MainWindow(QDialog):
         self.build_ui()
         self.set_default_settings()
         self.show()
+        
+        if url:
+            self.domain_pasted(url)
 
     def build_ui(self):
         self.setWindowTitle('eSGP')
