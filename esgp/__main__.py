@@ -17,10 +17,10 @@
 import json
 import logging
 import struct
-from argparse import ArgumentParser
-import daiquiri
 import sys
+from argparse import ArgumentParser
 
+import daiquiri
 from PyQt5.QtWidgets import QApplication
 
 from esgp.config import Configuration
@@ -28,10 +28,9 @@ from esgp.ui import MainWindow
 
 
 def _read_chrome_native_message():
-    logger = logging.getLogger(__file__)
-    text_length_bytes = sys.stdin.read(4)
-    text_length = struct.unpack("i", bytes(text_length_bytes, 'utf-8'))[0]
-    text_decoded = sys.stdin.read(text_length)
+    text_length_bytes = sys.stdin.buffer.read(4)
+    text_length = struct.unpack("i", text_length_bytes)[0]
+    text_decoded = sys.stdin.buffer.read(text_length)
     return json.loads(text_decoded)
 
 
@@ -45,12 +44,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     daiquiri.setup(level=logging.DEBUG if args.verbose else logging.WARNING)
-    
+    logger = logging.getLogger(__file__)
+
     url = None
     
     if (args.arg or "").startswith('chrome-extension://'):
-        # started from chrome extension
-        url = _read_chrome_native_message()['url']
+        try:
+            # started from chrome extension
+            url = _read_chrome_native_message()['url']
+        except:
+            logger.exception("Failed to communicate with chrome native messaging")
 
     config = Configuration()
     config.read()
